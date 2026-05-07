@@ -1,19 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+
+  <title>Live GPS Map</title>
+
+  <!-- LEAFLET CSS -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+
+  <style>
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: Arial, sans-serif;
+    }
+
+    #map {
+      width: 100%;
+      height: 100vh;
+    }
+
+    .popup-title {
+      font-weight: bold;
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+
+  </style>
+
+</head>
+
+<body>
+
+<div id="map"></div>
+
+<!-- LEAFLET JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
 <script>
 
-  // -----------------------------
+  // ---------------------------------------------------
   // CONFIG
-  // -----------------------------
+  // ---------------------------------------------------
 
   const SHEET_URL =
     "https://docs.google.com/spreadsheets/d/e/2PACX-1vTqf7zyiA1RZbMCwnhTcWOCLfAJmBq7b8s7MnJcubRxX2oQJ4kbSiVWN-vIhiXjTZKd6LQyq4pPSvrk/pub?output=csv";
 
-  const REFRESH_INTERVAL = 30000;
+  const REFRESH_INTERVAL = 30000; // 30 sec
 
-  // -----------------------------
-  // MAP
-  // -----------------------------
+  // ---------------------------------------------------
+  // CREATE MAP
+  // ---------------------------------------------------
 
   const map = L.map('map').setView([-22.5, 24.5], 6);
+
+  // OpenStreetMap Base Layer
 
   L.tileLayer(
     'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -22,11 +70,13 @@
     }
   ).addTo(map);
 
+  // Layer for markers
+
   let markersLayer = L.layerGroup().addTo(map);
 
-  // -----------------------------
-  // SVG ICONS
-  // -----------------------------
+  // ---------------------------------------------------
+  // SVG ICON CREATOR
+  // ---------------------------------------------------
 
   function createSVGIcon(svg, size = 40) {
 
@@ -40,45 +90,55 @@
 
   }
 
-  // Village Icon (large house)
+  // ---------------------------------------------------
+  // ICONS
+  // ---------------------------------------------------
+
+  // Village = large house
 
   const villageIcon = createSVGIcon(`
     <svg width="42" height="42" viewBox="0 0 64 64">
-      <path d="M8 30 L32 10 L56 30 V56 H38 V40 H26 V56 H8 Z"
-        fill="#d32f2f"
+      <path
+        d="M8 30 L32 10 L56 30 V56 H38 V40 H26 V56 H8 Z"
+        fill="#c62828"
         stroke="black"
-        stroke-width="2"/>
+        stroke-width="2"
+      />
     </svg>
   `, 42);
 
-  // Settlement Icon (small house)
+  // Settlement = smaller house
 
   const settlementIcon = createSVGIcon(`
     <svg width="30" height="30" viewBox="0 0 64 64">
-      <path d="M12 32 L32 16 L52 32 V52 H36 V40 H28 V52 H12 Z"
-        fill="#1976d2"
+      <path
+        d="M12 32 L32 16 L52 32 V52 H36 V40 H28 V52 H12 Z"
+        fill="#1565c0"
         stroke="black"
-        stroke-width="2"/>
+        stroke-width="2"
+      />
     </svg>
   `, 30);
 
-  // Corridor Icon (winding road)
+  // Corridor = winding road
 
   const corridorIcon = createSVGIcon(`
     <svg width="40" height="40" viewBox="0 0 64 64">
-      <path d="M20 60 
-               C10 45, 40 35, 30 20
-               C20 10, 45 5, 40 0"
+      <path
+        d="M20 60
+           C10 45, 40 35, 30 20
+           C20 10, 45 5, 40 0"
         fill="none"
-        stroke="#388e3c"
+        stroke="#2e7d32"
         stroke-width="8"
-        stroke-linecap="round"/>
+        stroke-linecap="round"
+      />
     </svg>
   `, 40);
 
-  // -----------------------------
+  // ---------------------------------------------------
   // GET ICON BY TYPE
-  // -----------------------------
+  // ---------------------------------------------------
 
   function getIcon(type) {
 
@@ -99,22 +159,28 @@
     }
 
     return settlementIcon;
+
   }
 
-  // -----------------------------
-  // LOAD DATA
-  // -----------------------------
+  // ---------------------------------------------------
+  // LOAD DATA FROM GOOGLE SHEET
+  // ---------------------------------------------------
 
   async function loadData() {
 
     try {
 
       const response = await fetch(SHEET_URL);
+
       const csvText = await response.text();
 
-      const rows = csvText.split('\n').slice(1);
+      // Remove old markers
 
       markersLayer.clearLayers();
+
+      // Split CSV rows
+
+      const rows = csvText.trim().split('\n').slice(1);
 
       rows.forEach(row => {
 
@@ -127,50 +193,59 @@
         const source = cols[4]?.trim();
         const usage = cols[5]?.trim();
 
-        if (!isNaN(lat) && !isNaN(lon)) {
+        // Skip invalid coords
 
-          const marker = L.marker(
-            [lat, lon],
-            {
-              icon: getIcon(type)
-            }
-          );
+        if (isNaN(lat) || isNaN(lon)) return;
 
-          marker.bindPopup(`
-            <div class="popup-title">${location}</div>
+        // Create marker
 
-            <div><b>Type:</b> ${type}</div>
-            <div><b>Source:</b> ${source}</div>
-            <div><b>Used for:</b> ${usage}</div>
+        const marker = L.marker(
+          [lat, lon],
+          {
+            icon: getIcon(type)
+          }
+        );
 
-            <hr>
+        // Popup
 
-            <div><b>Lat:</b> ${lat}</div>
-            <div><b>Lon:</b> ${lon}</div>
-          `);
+        marker.bindPopup(`
+          <div class="popup-title">${location}</div>
 
-          marker.addTo(markersLayer);
-        }
+          <div><b>Type:</b> ${type}</div>
+          <div><b>Source:</b> ${source}</div>
+          <div><b>Used For:</b> ${usage}</div>
+
+          <hr>
+
+          <div><b>Latitude:</b> ${lat}</div>
+          <div><b>Longitude:</b> ${lon}</div>
+        `);
+
+        marker.addTo(markersLayer);
 
       });
 
-    } catch (err) {
+    } catch (error) {
 
-      console.error("Error loading sheet:", err);
+      console.error("Error loading sheet:", error);
 
     }
+
   }
 
-  // -----------------------------
+  // ---------------------------------------------------
   // INITIAL LOAD
-  // -----------------------------
+  // ---------------------------------------------------
 
   loadData();
 
-  // -----------------------------
+  // ---------------------------------------------------
   // AUTO REFRESH
-  // -----------------------------
+  // ---------------------------------------------------
 
   setInterval(loadData, REFRESH_INTERVAL);
 
 </script>
+
+</body>
+</html>
