@@ -7,14 +7,12 @@
 
   <title>Live GPS Map</title>
 
-  <!-- LEAFLET CSS -->
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   />
 
   <style>
-
     html, body {
       margin: 0;
       padding: 0;
@@ -29,39 +27,34 @@
 
     .popup-title {
       font-weight: bold;
-      font-size: 18px;
-      margin-bottom: 8px;
+      font-size: 16px;
+      margin-bottom: 6px;
     }
-
   </style>
-
 </head>
 
 <body>
 
 <div id="map"></div>
 
-<!-- LEAFLET JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
 
-  // ---------------------------------------------------
+  // -----------------------------
   // CONFIG
-  // ---------------------------------------------------
+  // -----------------------------
 
   const SHEET_URL =
     "https://docs.google.com/spreadsheets/d/e/2PACX-1vTqf7zyiA1RZbMCwnhTcWOCLfAJmBq7b8s7MnJcubRxX2oQJ4kbSiVWN-vIhiXjTZKd6LQyq4pPSvrk/pub?output=csv";
 
-  const REFRESH_INTERVAL = 30000; // 30 sec
+  const REFRESH_INTERVAL = 30000;
 
-  // ---------------------------------------------------
-  // CREATE MAP
-  // ---------------------------------------------------
+  // -----------------------------
+  // MAP
+  // -----------------------------
 
   const map = L.map('map').setView([-22.5, 24.5], 6);
-
-  // OpenStreetMap Base Layer
 
   L.tileLayer(
     'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -70,16 +63,14 @@
     }
   ).addTo(map);
 
-  // Layer for markers
-
   let markersLayer = L.layerGroup().addTo(map);
+  let polygonLayer = L.layerGroup().addTo(map);
 
-  // ---------------------------------------------------
-  // SVG ICON CREATOR
-  // ---------------------------------------------------
+  // -----------------------------
+  // ICONS
+  // -----------------------------
 
   function createSVGIcon(svg, size = 40) {
-
     return L.divIcon({
       html: svg,
       className: '',
@@ -87,98 +78,88 @@
       iconAnchor: [size / 2, size],
       popupAnchor: [0, -size]
     });
-
   }
-
-  // ---------------------------------------------------
-  // ICONS
-  // ---------------------------------------------------
-
-  // Village = large house
 
   const villageIcon = createSVGIcon(`
     <svg width="42" height="42" viewBox="0 0 64 64">
-      <path
-        d="M8 30 L32 10 L56 30 V56 H38 V40 H26 V56 H8 Z"
-        fill="#c62828"
-        stroke="black"
-        stroke-width="2"
-      />
+      <path d="M8 30 L32 10 L56 30 V56 H38 V40 H26 V56 H8 Z"
+        fill="#c62828" stroke="black" stroke-width="2"/>
     </svg>
   `, 42);
 
-  // Settlement = smaller house
-
   const settlementIcon = createSVGIcon(`
     <svg width="30" height="30" viewBox="0 0 64 64">
-      <path
-        d="M12 32 L32 16 L52 32 V52 H36 V40 H28 V52 H12 Z"
-        fill="#1565c0"
-        stroke="black"
-        stroke-width="2"
-      />
+      <path d="M12 32 L32 16 L52 32 V52 H36 V40 H28 V52 H12 Z"
+        fill="#1565c0" stroke="black" stroke-width="2"/>
     </svg>
   `, 30);
 
-  // Corridor = winding road
-
   const corridorIcon = createSVGIcon(`
     <svg width="40" height="40" viewBox="0 0 64 64">
-      <path
-        d="M20 60
-           C10 45, 40 35, 30 20
-           C20 10, 45 5, 40 0"
-        fill="none"
-        stroke="#2e7d32"
+      <path d="M20 60 C10 45, 40 35, 30 20 C20 10, 45 5, 40 0"
+        fill="none" stroke="#2e7d32"
         stroke-width="8"
-        stroke-linecap="round"
-      />
+        stroke-linecap="round"/>
     </svg>
   `, 40);
 
-  // ---------------------------------------------------
-  // GET ICON BY TYPE
-  // ---------------------------------------------------
-
   function getIcon(type) {
-
     if (!type) return settlementIcon;
 
-    type = type.trim().toLowerCase();
+    type = type.toLowerCase().trim();
 
-    if (type === "village") {
-      return villageIcon;
-    }
-
-    if (type === "settlement") {
-      return settlementIcon;
-    }
-
-    if (type === "corridor") {
-      return corridorIcon;
-    }
+    if (type === "village") return villageIcon;
+    if (type === "settlement") return settlementIcon;
+    if (type === "corridor") return corridorIcon;
 
     return settlementIcon;
-
   }
 
-  // ---------------------------------------------------
-  // LOAD DATA FROM GOOGLE SHEET
-  // ---------------------------------------------------
+  // -----------------------------
+  // PARSE POLYGON SAFE
+  // -----------------------------
+
+  function parsePolygon(text) {
+    if (!text) return null;
+
+    try {
+      // Fix Google Sheets weird formatting
+      const cleaned = text
+        .replace(/\s/g, '')
+        .replace(/""/g, '"');
+
+      const coords = JSON.parse(cleaned);
+
+      // Your structure is deeply nested [[[[lon, lat]...]]]]
+      // flatten it safely:
+      let ring = coords;
+
+      while (Array.isArray(ring[0][0])) {
+        ring = ring[0];
+      }
+
+      // Leaflet expects [lat, lng]
+      return ring.map(p => [p[1], p[0]]);
+
+    } catch (e) {
+      console.warn("Polygon parse failed:", text);
+      return null;
+    }
+  }
+
+  // -----------------------------
+  // LOAD DATA
+  // -----------------------------
 
   async function loadData() {
 
     try {
 
       const response = await fetch(SHEET_URL);
-
       const csvText = await response.text();
 
-      // Remove old markers
-
       markersLayer.clearLayers();
-
-      // Split CSV rows
+      polygonLayer.clearLayers();
 
       const rows = csvText.trim().split('\n').slice(1);
 
@@ -190,59 +171,65 @@
         const type = cols[1]?.trim();
         const lat = parseFloat(cols[2]);
         const lon = parseFloat(cols[3]);
-        const source = cols[4]?.trim();
+        const dataSource = cols[4]?.trim();
         const usage = cols[5]?.trim();
+        const polygonRaw = cols[6]?.trim();
 
-        // Skip invalid coords
+        // -------------------------
+        // POINTS
+        // -------------------------
 
-        if (isNaN(lat) || isNaN(lon)) return;
+        if (!isNaN(lat) && !isNaN(lon)) {
 
-        // Create marker
-
-        const marker = L.marker(
-          [lat, lon],
-          {
+          const marker = L.marker([lat, lon], {
             icon: getIcon(type)
-          }
-        );
+          });
 
-        // Popup
+          marker.bindPopup(`
+            <div class="popup-title">${location}</div>
+            <div><b>Type:</b> ${type}</div>
+            <div><b>Source:</b> ${dataSource}</div>
+            <div><b>Use:</b> ${usage}</div>
+          `);
 
-        marker.bindPopup(`
-          <div class="popup-title">${location}</div>
+          marker.addTo(markersLayer);
+        }
 
-          <div><b>Type:</b> ${type}</div>
-          <div><b>Source:</b> ${source}</div>
-          <div><b>Used For:</b> ${usage}</div>
+        // -------------------------
+        // POLYGONS
+        // -------------------------
 
-          <hr>
+        const poly = parsePolygon(polygonRaw);
 
-          <div><b>Latitude:</b> ${lat}</div>
-          <div><b>Longitude:</b> ${lon}</div>
-        `);
+        if (poly && poly.length > 2) {
 
-        marker.addTo(markersLayer);
+          const polygon = L.polygon(poly, {
+            color: "#ff9800",
+            weight: 2,
+            fillOpacity: 0.15
+          });
+
+          polygon.bindPopup(`
+            <div class="popup-title">${location} (Area)</div>
+            <div><b>Type:</b> ${type}</div>
+            <div><b>Source:</b> ${dataSource}</div>
+          `);
+
+          polygon.addTo(polygonLayer);
+        }
 
       });
 
-    } catch (error) {
-
-      console.error("Error loading sheet:", error);
-
+    } catch (err) {
+      console.error("Load error:", err);
     }
-
   }
 
-  // ---------------------------------------------------
-  // INITIAL LOAD
-  // ---------------------------------------------------
+  // -----------------------------
+  // START
+  // -----------------------------
 
   loadData();
-
-  // ---------------------------------------------------
-  // AUTO REFRESH
-  // ---------------------------------------------------
-
   setInterval(loadData, REFRESH_INTERVAL);
 
 </script>
