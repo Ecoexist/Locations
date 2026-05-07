@@ -1,44 +1,5 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <title>Live GPS Map</title>
-
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet/dist/leaflet.css"
-  />
-
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
-  <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      height: 100%;
-      font-family: Arial, sans-serif;
-    }
-
-    #map {
-      width: 100%;
-      height: 100%;
-    }
-
-    .popup-title {
-      font-weight: bold;
-      font-size: 16px;
-      margin-bottom: 5px;
-    }
-  </style>
-</head>
-
-<body>
-
-<div id="map"></div>
-
 <script>
+
   // -----------------------------
   // CONFIG
   // -----------------------------
@@ -46,13 +7,13 @@
   const SHEET_URL =
     "https://docs.google.com/spreadsheets/d/e/2PACX-1vTqf7zyiA1RZbMCwnhTcWOCLfAJmBq7b8s7MnJcubRxX2oQJ4kbSiVWN-vIhiXjTZKd6LQyq4pPSvrk/pub?output=csv";
 
-  const REFRESH_INTERVAL = 30000; // 30 seconds
+  const REFRESH_INTERVAL = 30000;
 
   // -----------------------------
-  // CREATE MAP
+  // MAP
   // -----------------------------
 
-  const map = L.map('map').setView([-24.65, 25.91], 7);
+  const map = L.map('map').setView([-22.5, 24.5], 6);
 
   L.tileLayer(
     'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -64,7 +25,84 @@
   let markersLayer = L.layerGroup().addTo(map);
 
   // -----------------------------
-  // LOAD CSV DATA
+  // SVG ICONS
+  // -----------------------------
+
+  function createSVGIcon(svg, size = 40) {
+
+    return L.divIcon({
+      html: svg,
+      className: '',
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size],
+      popupAnchor: [0, -size]
+    });
+
+  }
+
+  // Village Icon (large house)
+
+  const villageIcon = createSVGIcon(`
+    <svg width="42" height="42" viewBox="0 0 64 64">
+      <path d="M8 30 L32 10 L56 30 V56 H38 V40 H26 V56 H8 Z"
+        fill="#d32f2f"
+        stroke="black"
+        stroke-width="2"/>
+    </svg>
+  `, 42);
+
+  // Settlement Icon (small house)
+
+  const settlementIcon = createSVGIcon(`
+    <svg width="30" height="30" viewBox="0 0 64 64">
+      <path d="M12 32 L32 16 L52 32 V52 H36 V40 H28 V52 H12 Z"
+        fill="#1976d2"
+        stroke="black"
+        stroke-width="2"/>
+    </svg>
+  `, 30);
+
+  // Corridor Icon (winding road)
+
+  const corridorIcon = createSVGIcon(`
+    <svg width="40" height="40" viewBox="0 0 64 64">
+      <path d="M20 60 
+               C10 45, 40 35, 30 20
+               C20 10, 45 5, 40 0"
+        fill="none"
+        stroke="#388e3c"
+        stroke-width="8"
+        stroke-linecap="round"/>
+    </svg>
+  `, 40);
+
+  // -----------------------------
+  // GET ICON BY TYPE
+  // -----------------------------
+
+  function getIcon(type) {
+
+    if (!type) return settlementIcon;
+
+    type = type.trim().toLowerCase();
+
+    if (type === "village") {
+      return villageIcon;
+    }
+
+    if (type === "settlement") {
+      return settlementIcon;
+    }
+
+    if (type === "corridor") {
+      return corridorIcon;
+    }
+
+    return settlementIcon;
+  }
+
+  // -----------------------------
+  // LOAD DATA
   // -----------------------------
 
   async function loadData() {
@@ -83,17 +121,30 @@
         const cols = row.split(',');
 
         const location = cols[0]?.trim();
-        const lat = parseFloat(cols[1]);
-        const lon = parseFloat(cols[2]);
-        const source = cols[3]?.trim();
+        const type = cols[1]?.trim();
+        const lat = parseFloat(cols[2]);
+        const lon = parseFloat(cols[3]);
+        const source = cols[4]?.trim();
+        const usage = cols[5]?.trim();
 
         if (!isNaN(lat) && !isNaN(lon)) {
 
-          const marker = L.marker([lat, lon]);
+          const marker = L.marker(
+            [lat, lon],
+            {
+              icon: getIcon(type)
+            }
+          );
 
           marker.bindPopup(`
             <div class="popup-title">${location}</div>
+
+            <div><b>Type:</b> ${type}</div>
             <div><b>Source:</b> ${source}</div>
+            <div><b>Used for:</b> ${usage}</div>
+
+            <hr>
+
             <div><b>Lat:</b> ${lat}</div>
             <div><b>Lon:</b> ${lon}</div>
           `);
@@ -104,7 +155,9 @@
       });
 
     } catch (err) {
+
       console.error("Error loading sheet:", err);
+
     }
   }
 
@@ -121,6 +174,3 @@
   setInterval(loadData, REFRESH_INTERVAL);
 
 </script>
-
-</body>
-</html>
