@@ -7,6 +7,7 @@
 
   <title>Live GPS Map</title>
 
+  <!-- Leaflet -->
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -67,7 +68,7 @@
   let polygonLayer = L.layerGroup().addTo(map);
 
   // -----------------------------
-  // ICONS
+  // ICONS (SVG)
   // -----------------------------
 
   function createSVGIcon(svg, size = 40) {
@@ -116,33 +117,40 @@
   }
 
   // -----------------------------
-  // PARSE POLYGON SAFE
+  // SAFE POLYGON PARSER
   // -----------------------------
 
   function parsePolygon(text) {
-    if (!text) return null;
+
+    if (!text || text.trim() === "") return null;
 
     try {
-      // Fix Google Sheets weird formatting
-      const cleaned = text
-        .replace(/\s/g, '')
-        .replace(/""/g, '"');
+
+      const cleaned = text.replace(/\s/g, '');
 
       const coords = JSON.parse(cleaned);
 
-      // Your structure is deeply nested [[[[lon, lat]...]]]]
-      // flatten it safely:
       let ring = coords;
 
-      while (Array.isArray(ring[0][0])) {
+      // flatten nested arrays [[[[...]]]]
+      while (
+        Array.isArray(ring) &&
+        Array.isArray(ring[0]) &&
+        Array.isArray(ring[0][0])
+      ) {
         ring = ring[0];
       }
 
-      // Leaflet expects [lat, lng]
-      return ring.map(p => [p[1], p[0]]);
+      if (!Array.isArray(ring)) return null;
+
+      const leafletCoords = ring
+        .filter(p => Array.isArray(p) && p.length >= 2)
+        .map(p => [p[1], p[0]]); // lon -> lat swap
+
+      return leafletCoords.length > 2 ? leafletCoords : null;
 
     } catch (e) {
-      console.warn("Polygon parse failed:", text);
+      console.warn("Bad polygon skipped:", text);
       return null;
     }
   }
@@ -165,6 +173,8 @@
 
       rows.forEach(row => {
 
+        if (!row || row.trim() === "") return;
+
         const cols = row.split(',');
 
         const location = cols[0]?.trim();
@@ -173,49 +183,50 @@
         const lon = parseFloat(cols[3]);
         const dataSource = cols[4]?.trim();
         const usage = cols[5]?.trim();
-        const polygonRaw = cols[6]?.trim();
+        const polygonRaw = cols[6]; // IMPORTANT: do NOT trim aggressively
 
-        // -------------------------
+        // ---------------------
         // POINTS
-        // -------------------------
+        // ---------------------
 
         if (!isNaN(lat) && !isNaN(lon)) {
 
-          const marker = L.marker([lat, lon], {
+          L.marker([lat, lon], {
             icon: getIcon(type)
-          });
-
-          marker.bindPopup(`
+          })
+          .bindPopup(`
             <div class="popup-title">${location}</div>
             <div><b>Type:</b> ${type}</div>
             <div><b>Source:</b> ${dataSource}</div>
             <div><b>Use:</b> ${usage}</div>
-          `);
+          `)
+          .addTo(markersLayer);
 
-          marker.addTo(markersLayer);
         }
 
-        // -------------------------
+        // ---------------------
         // POLYGONS
-        // -------------------------
+        // ---------------------
 
-        const poly = parsePolygon(polygonRaw);
+        if (polygonRaw && polygonRaw.trim() !== "") {
 
-        if (poly && poly.length > 2) {
+          const poly = parsePolygon(polygonRaw);
 
-          const polygon = L.polygon(poly, {
-            color: "#ff9800",
-            weight: 2,
-            fillOpacity: 0.15
-          });
+          if (poly) {
 
-          polygon.bindPopup(`
-            <div class="popup-title">${location} (Area)</div>
-            <div><b>Type:</b> ${type}</div>
-            <div><b>Source:</b> ${dataSource}</div>
-          `);
+            L.polygon(poly, {
+              color: "#ff9800",
+              weight: 2,
+              fillOpacity: 0.2
+            })
+            .bindPopup(`
+              <div class="popup-title">${location} (Polygon)</div>
+              <div><b>Type:</b> ${type}</div>
+              <div><b>Source:</b> ${dataSource}</div>
+            `)
+            .addTo(polygonLayer);
 
-          polygon.addTo(polygonLayer);
+          }
         }
 
       });
@@ -226,7 +237,7 @@
   }
 
   // -----------------------------
-  // START
+  // INIT
   // -----------------------------
 
   loadData();
